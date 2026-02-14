@@ -3,26 +3,39 @@ import express from "express";
 const app = express();
 app.use(express.json());
 
-const validKeys = [
-  "RAON-DEV-9999",
-  "RAON-ALPHA-1234"
-];
+// TEMP DATABASE (we'll upgrade later)
+const licenses = {
+  "RAON-DEV-9999": null   // null = not used yet
+};
 
+// Health check
 app.get("/", (req, res) => {
-  res.send("RÆON SERVER ONLINE 😈");
+  res.send("RÆON backend is alive 😈");
 });
 
+// License verify
 app.post("/license/verify", (req, res) => {
-  const { key } = req.body;
+  const { key, device } = req.body;
 
-  if (validKeys.includes(key)) {
-    res.json({ status: "ok", plan: "hacker" });
-  } else {
-    res.json({ status: "invalid" });
+  if (!licenses[key]) {
+    return res.json({ valid: false });
   }
+
+  // First activation
+  if (licenses[key] === null) {
+    licenses[key] = device;
+    return res.json({ valid: true });
+  }
+
+  // Already activated on same device
+  if (licenses[key] === device) {
+    return res.json({ valid: true });
+  }
+
+  // Used on another device
+  return res.json({ valid: false });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("Server running on " + PORT);
+app.listen(3000, () => {
+  console.log("RÆON server running on port 3000");
 });
