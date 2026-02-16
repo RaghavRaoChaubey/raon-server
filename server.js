@@ -1,8 +1,8 @@
 import express from "express";
+
 const app = express();
 app.use(express.json());
 
-// fake database
 const licenses = [
   "RAON-DEV-9999",
   "RAON-STUDENT-1234",
@@ -15,14 +15,21 @@ app.get("/", (req, res) => {
 
 app.post("/license/verify", (req, res) => {
   const key = req.body.key;
-
-  if (licenses.includes(key)) {
-    res.json({ valid: true });
-  } else {
-    res.json({ valid: false });
-  }
+  res.json({ valid: licenses.includes(key) });
 });
 
-app.listen(3000, () => {
-  console.log("RÆON server running on port 3000");
+app.get("/admin/gen", (req, res) => {
+  const type = req.query.type || "TEST";
+  const key =
+    "RAON-" +
+    type.toUpperCase() +
+    "-" +
+    Math.floor(1000 + Math.random() * 9000);
+
+  res.json({ generatedKey: key });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("Server running on port " + PORT);
 });
