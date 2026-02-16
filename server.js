@@ -11,22 +11,20 @@ app.use(session({
   saveUninitialized: true
 }));
 
-// ADMIN LOGIN
 const ADMIN_USER = "raghav";
 const ADMIN_PASS = "raghav2924r";
 
-// IN-MEMORY DATABASE
-const activeLicenses = {};   // key -> deviceID
+// DATABASE
+const generatedKeys = [];        // all keys ever generated
+const activeLicenses = {};       // key -> device
 
-// HOME
 app.get("/", (req, res) => {
   res.send("RÆON backend is alive 😈");
 });
 
-// LOGIN PAGE
+// LOGIN
 app.get("/admin", (req, res) => {
   if (req.session.logged) return res.redirect("/admin/panel");
-
   res.send(`
     <h2>RÆON Admin Login</h2>
     <form method="POST" action="/admin/login">
@@ -37,10 +35,8 @@ app.get("/admin", (req, res) => {
   `);
 });
 
-// LOGIN CHECK
 app.post("/admin/login", (req, res) => {
   const { user, pass } = req.body;
-
   if (user === ADMIN_USER && pass === ADMIN_PASS) {
     req.session.logged = true;
     res.redirect("/admin/panel");
@@ -56,20 +52,25 @@ app.get("/admin/panel", (req, res) => {
   res.send(`
     <h2>Welcome Raghav 😈</h2>
     <form method="GET" action="/admin/gen">
-      Type: <input name="type" placeholder="DEV / STUDENT / HACKER"/><br/><br/>
+      Type: <input name="type"/><br/><br/>
       <button type="submit">Generate Key</button>
     </form>
+
     <br/>
+    <a href="/admin/keys">View All Keys</a>
+    <br/><br/>
+
     <form method="GET" action="/admin/revoke">
       Revoke Key: <input name="key"/><br/><br/>
       <button type="submit">Revoke</button>
     </form>
+
     <br/>
     <a href="/admin/logout">Logout</a>
   `);
 });
 
-// GENERATE KEY
+// GENERATE
 app.get("/admin/gen", (req, res) => {
   if (!req.session.logged) return res.redirect("/admin");
 
@@ -80,6 +81,8 @@ app.get("/admin/gen", (req, res) => {
     "-" +
     Math.floor(1000 + Math.random() * 9000);
 
+  generatedKeys.push(key);
+
   res.send(`
     <h2>Generated Key</h2>
     <h1>${key}</h1>
@@ -87,7 +90,25 @@ app.get("/admin/gen", (req, res) => {
   `);
 });
 
-// REVOKE KEY
+// VIEW ALL KEYS
+app.get("/admin/keys", (req, res) => {
+  if (!req.session.logged) return res.redirect("/admin");
+
+  let list = generatedKeys.map(k => {
+    const status = activeLicenses[k]
+      ? "BOUND"
+      : "UNUSED";
+    return `<li>${k} - ${status}</li>`;
+  }).join("");
+
+  res.send(`
+    <h2>All Keys</h2>
+    <ul>${list}</ul>
+    <a href="/admin/panel">Back</a>
+  `);
+});
+
+// REVOKE
 app.get("/admin/revoke", (req, res) => {
   if (!req.session.logged) return res.redirect("/admin");
 
@@ -107,22 +128,23 @@ app.get("/admin/logout", (req, res) => {
   res.redirect("/admin");
 });
 
-// LICENSE VERIFY (FOR JAVA APP)
+// VERIFY FOR JAVA
 app.post("/license/verify", (req, res) => {
   const { key, device } = req.body;
 
-  // First time use
+  if (!generatedKeys.includes(key)) {
+    return res.json({ valid: false, reason: "KEY_NOT_FOUND" });
+  }
+
   if (!activeLicenses[key]) {
     activeLicenses[key] = device;
     return res.json({ valid: true, bound: true });
   }
 
-  // Same device
   if (activeLicenses[key] === device) {
     return res.json({ valid: true, bound: false });
   }
 
-  // Used on another PC
   return res.json({
     valid: false,
     reason: "KEY_ALREADY_USED_ON_ANOTHER_DEVICE"
@@ -131,5 +153,5 @@ app.post("/license/verify", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("RÆON server running on port " + PORT);
+  console.log("RÆON server running");
 });
