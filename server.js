@@ -1,139 +1,97 @@
 import express from "express";
-import session from "express-session";
-import mongoose from "mongoose";
 
 const app = express();
-app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.use(session({
-  secret: "RAON-SESSION-SECRET-999",
-  resave: false,
-  saveUninitialized: true
-}));
-
-mongoose.connect("YOUR_MONGODB_URL_HERE");
-
-// MODEL
-const KeySchema = new mongoose.Schema({
-  key: String,
-  device: String,
-  revoked: { type: Boolean, default: false }
-});
-const KeyModel = mongoose.model("Key", KeySchema);
-
-// ADMIN
+// ===== ADMIN LOGIN =====
 const ADMIN_USER = "raghav";
 const ADMIN_PASS = "raghav2924r";
 
+// ===== DATABASE (in memory) =====
+let licenses = [];
+let revoked = [];
+
+// ===== HOME =====
 app.get("/", (req, res) => {
-  res.send("RÆON backend is alive 😈");
+  res.send("RÆON License Server Running 😈");
 });
 
-// LOGIN
+// ===== LOGIN PAGE =====
 app.get("/admin", (req, res) => {
-  if (req.session.logged) return res.redirect("/admin/panel");
   res.send(`
-    <h2>RÆON Admin Login</h2>
-    <form method="POST" action="/admin/login">
-      Username: <input name="user"/><br/>
-      Password: <input type="password" name="pass"/><br/>
+    <h2>Admin Login</h2>
+    <form action="/admin/login" method="post">
+      <input name="user" placeholder="username"/><br>
+      <input name="pass" type="password" placeholder="password"/><br>
       <button>Login</button>
     </form>
   `);
 });
 
+// ===== LOGIN CHECK =====
 app.post("/admin/login", (req, res) => {
   const { user, pass } = req.body;
+
   if (user === ADMIN_USER && pass === ADMIN_PASS) {
-    req.session.logged = true;
     res.redirect("/admin/panel");
-  } else res.send("Wrong ☠");
+  } else {
+    res.send("Wrong credentials ☠");
+  }
 });
 
-// PANEL
-app.get("/admin/panel", async (req, res) => {
-  if (!req.session.logged) return res.redirect("/admin");
-
-  const keys = await KeyModel.find();
-
-  let list = keys.map(k =>
-    `<li>${k.key} - ${
-      k.revoked ? "REVOKED ☠" :
-      k.device ? "BOUND" :
-      "UNUSED"
-    }</li>`
-  ).join("");
-
+// ===== ADMIN PANEL =====
+app.get("/admin/panel", (req, res) => {
   res.send(`
     <h2>RÆON Admin Panel 😈</h2>
-    <form action="/admin/gen">
-      Type: <input name="type"/>
-      <button>Generate</button>
-    </form>
-    <ul>${list}</ul>
 
-    <form action="/admin/revoke">
-      Revoke key: <input name="key"/>
+    <form action="/admin/generate" method="post">
+      <button>Generate Key</button>
+    </form>
+
+    <h3>Active Keys</h3>
+    <pre>${JSON.stringify(licenses, null, 2)}</pre>
+
+    <h3>Revoked Keys</h3>
+    <pre>${JSON.stringify(revoked, null, 2)}</pre>
+
+    <form action="/admin/revoke" method="post">
+      <input name="key" placeholder="key to revoke"/>
       <button>Revoke</button>
     </form>
-
-    <a href="/admin/logout">Logout</a>
   `);
 });
 
-// GENERATE
-app.get("/admin/gen", async (req, res) => {
-  if (!req.session.logged) return res.redirect("/admin");
-
-  const type = req.query.type || "TEST";
-  const key = "RAON-" + type + "-" + Math.floor(1000 + Math.random()*9000);
-
-  await KeyModel.create({ key });
-
+// ===== GENERATE KEY =====
+app.post("/admin/generate", (req, res) => {
+  const key = "RAON-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  licenses.push(key);
   res.redirect("/admin/panel");
 });
 
-// REVOKE (REAL)
-app.get("/admin/revoke", async (req, res) => {
-  if (!req.session.logged) return res.redirect("/admin");
+// ===== REVOKE KEY =====
+app.post("/admin/revoke", (req, res) => {
+  const { key } = req.body;
 
-  const key = req.query.key;
-  await KeyModel.updateOne(
-    { key },
-    { revoked: true }
-  );
-
-  res.redirect("/admin/panel");
-});
-
-// VERIFY (REAL LOGIC)
-app.post("/license/verify", async (req, res) => {
-  const { key, device } = req.body;
-  const row = await KeyModel.findOne({ key });
-
-  if (!row) return res.json({ valid:false });
-
-  if (row.revoked)
-    return res.json({ valid:false, reason:"REVOKED" });
-
-  if (!row.device) {
-    row.device = device;
-    await row.save();
-    return res.json({ valid:true, bound:true });
+  if (licenses.includes(key)) {
+    licenses = licenses.filter(k => k !== key);
+    revoked.push(key);
   }
-
-  if (row.device === device)
-    return res.json({ valid:true });
-
-  res.json({ valid:false, reason:"USED" });
+  res.redirect("/admin/panel");
 });
 
-// LOGOUT
-app.get("/admin/logout", (req, res) => {
-  req.session.destroy();
-  res.redirect("/admin");
+// ===== USER VERIFY API =====
+app.post("/license/verify", (req, res) => {
+  const { key } = req.body;
+
+  if (licenses.includes(key)) {
+    res.json({ valid: true });
+  } else {
+    res.json({ valid: false });
+  }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("RÆON running"));
+// ===== START =====
+app.listen(3000, () => {
+  console.log("Server running on port 3000 😈");
+});
