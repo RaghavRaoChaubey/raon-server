@@ -1,14 +1,18 @@
 import express from "express";
+import crypto from "crypto";
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ADMIN LOGIN
+// ADMIN CREDENTIALS
 const ADMIN_USER = "raghav";
 const ADMIN_PASS = "raghav2924r";
 
-// DATABASE (in-memory)
+// SESSION
+let sessionToken = null;
+
+// DATABASE
 let licenses = [];
 let revoked = [];
 
@@ -17,7 +21,7 @@ app.get("/", (req, res) => {
   res.send("RÆON Pro License Server 😈");
 });
 
-// ADMIN LOGIN PAGE
+// LOGIN PAGE
 app.get("/admin", (req, res) => {
   res.send(`
   <h2>RÆON Admin Login</h2>
@@ -32,15 +36,31 @@ app.get("/admin", (req, res) => {
 // LOGIN
 app.post("/admin/login", (req, res) => {
   const { user, pass } = req.body;
+
   if (user === ADMIN_USER && pass === ADMIN_PASS) {
-    res.redirect("/admin/panel");
+    sessionToken = crypto.randomBytes(16).toString("hex");
+    res.redirect("/admin/panel?token=" + sessionToken);
   } else {
     res.send("Access Denied ☠");
   }
 });
 
+// LOGOUT
+app.get("/admin/logout", (req, res) => {
+  sessionToken = null;
+  res.redirect("/admin");
+});
+
+// AUTH CHECK
+function auth(req, res, next) {
+  if (req.query.token !== sessionToken) {
+    return res.redirect("/admin");
+  }
+  next();
+}
+
 // ADMIN PANEL
-app.get("/admin/panel", (req, res) => {
+app.get("/admin/panel", auth, (req, res) => {
 
   let table = licenses.map(l => {
     const daysLeft = Math.ceil(
@@ -64,7 +84,9 @@ app.get("/admin/panel", (req, res) => {
   res.send(`
   <h2>RÆON Pro Dashboard 😈</h2>
 
-  <form action="/admin/generate" method="post">
+  <a href="/admin/logout">Logout</a>
+
+  <form action="/admin/generate?token=${req.query.token}" method="post">
     Expiry (days): 
     <input name="days" value="30"/>
     Notes:
@@ -89,18 +111,18 @@ app.get("/admin/panel", (req, res) => {
   </table>
 
   <h3>Revoke Key</h3>
-  <form action="/admin/revoke" method="post">
+  <form action="/admin/revoke?token=${req.query.token}" method="post">
     <input name="key" placeholder="key"/>
     <button>Revoke</button>
   </form>
 
   <h3>Export</h3>
-  <a href="/admin/export">Download CSV</a>
+  <a href="/admin/export?token=${req.query.token}">Download CSV</a>
   `);
 });
 
 // GENERATE
-app.post("/admin/generate", (req, res) => {
+app.post("/admin/generate", auth, (req, res) => {
   const days = parseInt(req.body.days || 30);
   const notes = req.body.notes || "";
 
@@ -122,22 +144,22 @@ app.post("/admin/generate", (req, res) => {
     notes
   });
 
-  res.redirect("/admin/panel");
+  res.redirect("/admin/panel?token=" + sessionToken);
 });
 
 // REVOKE
-app.post("/admin/revoke", (req, res) => {
+app.post("/admin/revoke", auth, (req, res) => {
   const { key } = req.body;
   const found = licenses.find(k => k.key === key);
   if (found) {
     licenses = licenses.filter(k => k.key !== key);
     revoked.push(found);
   }
-  res.redirect("/admin/panel");
+  res.redirect("/admin/panel?token=" + sessionToken);
 });
 
-// EXPORT CSV
-app.get("/admin/export", (req, res) => {
+// EXPORT
+app.get("/admin/export", auth, (req, res) => {
   let csv = "Key,Status,Device,Activated,LastUsed,Uses,IP,Expiry,Notes\n";
 
   licenses.forEach(l => {
@@ -149,7 +171,7 @@ app.get("/admin/export", (req, res) => {
   res.send(csv);
 });
 
-// VERIFY (APP SIDE)
+// VERIFY (APP)
 app.post("/license/verify", (req, res) => {
   const { key, device } = req.body;
   const ip = req.ip;
@@ -185,5 +207,5 @@ app.post("/license/verify", (req, res) => {
 
 // START
 app.listen(3000, () => {
-  console.log("RÆON Phase 5 Pro Server Running 😈");
+  console.log("RÆON Phase 6 Secure Server Running 😈");
 });
