@@ -11,18 +11,21 @@ app.use(session({
   saveUninitialized: true
 }));
 
+// ADMIN LOGIN
 const ADMIN_USER = "raghav";
 const ADMIN_PASS = "raghav2924r";
 
+// IN-MEMORY DATABASE
+const activeLicenses = {};   // key -> deviceID
+
+// HOME
 app.get("/", (req, res) => {
   res.send("RÆON backend is alive 😈");
 });
 
-// Login page
+// LOGIN PAGE
 app.get("/admin", (req, res) => {
-  if (req.session.logged) {
-    return res.redirect("/admin/panel");
-  }
+  if (req.session.logged) return res.redirect("/admin/panel");
 
   res.send(`
     <h2>RÆON Admin Login</h2>
@@ -34,7 +37,7 @@ app.get("/admin", (req, res) => {
   `);
 });
 
-// Login check
+// LOGIN CHECK
 app.post("/admin/login", (req, res) => {
   const { user, pass } = req.body;
 
@@ -46,28 +49,29 @@ app.post("/admin/login", (req, res) => {
   }
 });
 
-// Admin panel
+// ADMIN PANEL
 app.get("/admin/panel", (req, res) => {
-  if (!req.session.logged) {
-    return res.redirect("/admin");
-  }
+  if (!req.session.logged) return res.redirect("/admin");
 
   res.send(`
     <h2>Welcome Raghav 😈</h2>
     <form method="GET" action="/admin/gen">
-      Type: <input name="type"/><br/><br/>
+      Type: <input name="type" placeholder="DEV / STUDENT / HACKER"/><br/><br/>
       <button type="submit">Generate Key</button>
+    </form>
+    <br/>
+    <form method="GET" action="/admin/revoke">
+      Revoke Key: <input name="key"/><br/><br/>
+      <button type="submit">Revoke</button>
     </form>
     <br/>
     <a href="/admin/logout">Logout</a>
   `);
 });
 
-// Generator (protected)
+// GENERATE KEY
 app.get("/admin/gen", (req, res) => {
-  if (!req.session.logged) {
-    return res.redirect("/admin");
-  }
+  if (!req.session.logged) return res.redirect("/admin");
 
   const type = req.query.type || "TEST";
   const key =
@@ -83,19 +87,49 @@ app.get("/admin/gen", (req, res) => {
   `);
 });
 
-// Logout
+// REVOKE KEY
+app.get("/admin/revoke", (req, res) => {
+  if (!req.session.logged) return res.redirect("/admin");
+
+  const key = req.query.key;
+  delete activeLicenses[key];
+
+  res.send(`
+    <h2>Key Revoked</h2>
+    <p>${key}</p>
+    <a href="/admin/panel">Back</a>
+  `);
+});
+
+// LOGOUT
 app.get("/admin/logout", (req, res) => {
   req.session.destroy();
   res.redirect("/admin");
 });
 
-// License API for your Java app
+// LICENSE VERIFY (FOR JAVA APP)
 app.post("/license/verify", (req, res) => {
-  const key = req.body.key;
-  res.json({ valid: key.startsWith("RAON-") });
+  const { key, device } = req.body;
+
+  // First time use
+  if (!activeLicenses[key]) {
+    activeLicenses[key] = device;
+    return res.json({ valid: true, bound: true });
+  }
+
+  // Same device
+  if (activeLicenses[key] === device) {
+    return res.json({ valid: true, bound: false });
+  }
+
+  // Used on another PC
+  return res.json({
+    valid: false,
+    reason: "KEY_ALREADY_USED_ON_ANOTHER_DEVICE"
+  });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("RÆON server running");
+  console.log("RÆON server running on port " + PORT);
 });
