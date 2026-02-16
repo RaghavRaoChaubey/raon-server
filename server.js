@@ -12,13 +12,13 @@ app.use(session({
   saveUninitialized: true
 }));
 
-// CONNECT DB
-mongoose.connect("mongodb+srv://raon:<db_password>@raon.y5eyqy1.mongodb.net/?appName=raon");
+mongoose.connect("YOUR_MONGODB_URL_HERE");
 
-// MODELS
+// MODEL
 const KeySchema = new mongoose.Schema({
   key: String,
-  device: String
+  device: String,
+  revoked: { type: Boolean, default: false }
 });
 const KeyModel = mongoose.model("Key", KeySchema);
 
@@ -58,7 +58,11 @@ app.get("/admin/panel", async (req, res) => {
   const keys = await KeyModel.find();
 
   let list = keys.map(k =>
-    `<li>${k.key} - ${k.device || "UNUSED"}</li>`
+    `<li>${k.key} - ${
+      k.revoked ? "REVOKED ☠" :
+      k.device ? "BOUND" :
+      "UNUSED"
+    }</li>`
   ).join("");
 
   res.send(`
@@ -68,6 +72,12 @@ app.get("/admin/panel", async (req, res) => {
       <button>Generate</button>
     </form>
     <ul>${list}</ul>
+
+    <form action="/admin/revoke">
+      Revoke key: <input name="key"/>
+      <button>Revoke</button>
+    </form>
+
     <a href="/admin/logout">Logout</a>
   `);
 });
@@ -84,12 +94,28 @@ app.get("/admin/gen", async (req, res) => {
   res.redirect("/admin/panel");
 });
 
-// VERIFY
+// REVOKE (REAL)
+app.get("/admin/revoke", async (req, res) => {
+  if (!req.session.logged) return res.redirect("/admin");
+
+  const key = req.query.key;
+  await KeyModel.updateOne(
+    { key },
+    { revoked: true }
+  );
+
+  res.redirect("/admin/panel");
+});
+
+// VERIFY (REAL LOGIC)
 app.post("/license/verify", async (req, res) => {
   const { key, device } = req.body;
   const row = await KeyModel.findOne({ key });
 
   if (!row) return res.json({ valid:false });
+
+  if (row.revoked)
+    return res.json({ valid:false, reason:"REVOKED" });
 
   if (!row.device) {
     row.device = device;
