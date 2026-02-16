@@ -1,20 +1,29 @@
 import express from "express";
+import session from "express-session";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Hardcoded admin credentials
+app.use(session({
+  secret: "RAON-SESSION-SECRET-999",
+  resave: false,
+  saveUninitialized: true
+}));
+
 const ADMIN_USER = "raghav";
 const ADMIN_PASS = "raghav2924r";
 
-// Home
 app.get("/", (req, res) => {
   res.send("RÆON backend is alive 😈");
 });
 
-// 1️⃣ Login page
+// Login page
 app.get("/admin", (req, res) => {
+  if (req.session.logged) {
+    return res.redirect("/admin/panel");
+  }
+
   res.send(`
     <h2>RÆON Admin Login</h2>
     <form method="POST" action="/admin/login">
@@ -25,25 +34,41 @@ app.get("/admin", (req, res) => {
   `);
 });
 
-// 2️⃣ Login check
+// Login check
 app.post("/admin/login", (req, res) => {
   const { user, pass } = req.body;
 
   if (user === ADMIN_USER && pass === ADMIN_PASS) {
-    res.send(`
-      <h2>Welcome Raghav 😈</h2>
-      <form method="GET" action="/admin/gen">
-        Type: <input name="type"/><br/><br/>
-        <button type="submit">Generate Key</button>
-      </form>
-    `);
+    req.session.logged = true;
+    res.redirect("/admin/panel");
   } else {
     res.send("Wrong credentials ☠");
   }
 });
 
-// 3️⃣ Generator (only after login)
+// Admin panel
+app.get("/admin/panel", (req, res) => {
+  if (!req.session.logged) {
+    return res.redirect("/admin");
+  }
+
+  res.send(`
+    <h2>Welcome Raghav 😈</h2>
+    <form method="GET" action="/admin/gen">
+      Type: <input name="type"/><br/><br/>
+      <button type="submit">Generate Key</button>
+    </form>
+    <br/>
+    <a href="/admin/logout">Logout</a>
+  `);
+});
+
+// Generator (protected)
 app.get("/admin/gen", (req, res) => {
+  if (!req.session.logged) {
+    return res.redirect("/admin");
+  }
+
   const type = req.query.type || "TEST";
   const key =
     "RAON-" +
@@ -54,11 +79,17 @@ app.get("/admin/gen", (req, res) => {
   res.send(`
     <h2>Generated Key</h2>
     <h1>${key}</h1>
-    <a href="/admin">Generate another</a>
+    <a href="/admin/panel">Back</a>
   `);
 });
 
-// License API (for your Java app)
+// Logout
+app.get("/admin/logout", (req, res) => {
+  req.session.destroy();
+  res.redirect("/admin");
+});
+
+// License API for your Java app
 app.post("/license/verify", (req, res) => {
   const key = req.body.key;
   res.json({ valid: key.startsWith("RAON-") });
