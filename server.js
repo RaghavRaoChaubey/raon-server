@@ -1,5 +1,6 @@
 import express from "express";
 import session from "express-session";
+import mongoose from "mongoose";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -11,12 +12,19 @@ app.use(session({
   saveUninitialized: true
 }));
 
+// CONNECT DB
+mongoose.connect("mongodb+srv://raon:<db_password>@raon.y5eyqy1.mongodb.net/?appName=raon");
+
+// MODELS
+const KeySchema = new mongoose.Schema({
+  key: String,
+  device: String
+});
+const KeyModel = mongoose.model("Key", KeySchema);
+
+// ADMIN
 const ADMIN_USER = "raghav";
 const ADMIN_PASS = "raghav2924r";
-
-// DATABASE
-const generatedKeys = [];        // all keys ever generated
-const activeLicenses = {};       // key -> device
 
 app.get("/", (req, res) => {
   res.send("RÆON backend is alive 😈");
@@ -28,9 +36,9 @@ app.get("/admin", (req, res) => {
   res.send(`
     <h2>RÆON Admin Login</h2>
     <form method="POST" action="/admin/login">
-      Username: <input name="user"/><br/><br/>
-      Password: <input type="password" name="pass"/><br/><br/>
-      <button type="submit">Login</button>
+      Username: <input name="user"/><br/>
+      Password: <input type="password" name="pass"/><br/>
+      <button>Login</button>
     </form>
   `);
 });
@@ -40,86 +48,59 @@ app.post("/admin/login", (req, res) => {
   if (user === ADMIN_USER && pass === ADMIN_PASS) {
     req.session.logged = true;
     res.redirect("/admin/panel");
-  } else {
-    res.send("Wrong credentials ☠");
-  }
+  } else res.send("Wrong ☠");
 });
 
-// ADMIN PANEL
-app.get("/admin/panel", (req, res) => {
+// PANEL
+app.get("/admin/panel", async (req, res) => {
   if (!req.session.logged) return res.redirect("/admin");
 
+  const keys = await KeyModel.find();
+
+  let list = keys.map(k =>
+    `<li>${k.key} - ${k.device || "UNUSED"}</li>`
+  ).join("");
+
   res.send(`
-    <h2>Welcome Raghav 😈</h2>
-    <form method="GET" action="/admin/gen">
-      Type: <input name="type"/><br/><br/>
-      <button type="submit">Generate Key</button>
+    <h2>RÆON Admin Panel 😈</h2>
+    <form action="/admin/gen">
+      Type: <input name="type"/>
+      <button>Generate</button>
     </form>
-
-    <br/>
-    <a href="/admin/keys">View All Keys</a>
-    <br/><br/>
-
-    <form method="GET" action="/admin/revoke">
-      Revoke Key: <input name="key"/><br/><br/>
-      <button type="submit">Revoke</button>
-    </form>
-
-    <br/>
+    <ul>${list}</ul>
     <a href="/admin/logout">Logout</a>
   `);
 });
 
 // GENERATE
-app.get("/admin/gen", (req, res) => {
+app.get("/admin/gen", async (req, res) => {
   if (!req.session.logged) return res.redirect("/admin");
 
   const type = req.query.type || "TEST";
-  const key =
-    "RAON-" +
-    type.toUpperCase() +
-    "-" +
-    Math.floor(1000 + Math.random() * 9000);
+  const key = "RAON-" + type + "-" + Math.floor(1000 + Math.random()*9000);
 
-  generatedKeys.push(key);
+  await KeyModel.create({ key });
 
-  res.send(`
-    <h2>Generated Key</h2>
-    <h1>${key}</h1>
-    <a href="/admin/panel">Back</a>
-  `);
+  res.redirect("/admin/panel");
 });
 
-// VIEW ALL KEYS
-app.get("/admin/keys", (req, res) => {
-  if (!req.session.logged) return res.redirect("/admin");
+// VERIFY
+app.post("/license/verify", async (req, res) => {
+  const { key, device } = req.body;
+  const row = await KeyModel.findOne({ key });
 
-  let list = generatedKeys.map(k => {
-    const status = activeLicenses[k]
-      ? "BOUND"
-      : "UNUSED";
-    return `<li>${k} - ${status}</li>`;
-  }).join("");
+  if (!row) return res.json({ valid:false });
 
-  res.send(`
-    <h2>All Keys</h2>
-    <ul>${list}</ul>
-    <a href="/admin/panel">Back</a>
-  `);
-});
+  if (!row.device) {
+    row.device = device;
+    await row.save();
+    return res.json({ valid:true, bound:true });
+  }
 
-// REVOKE
-app.get("/admin/revoke", (req, res) => {
-  if (!req.session.logged) return res.redirect("/admin");
+  if (row.device === device)
+    return res.json({ valid:true });
 
-  const key = req.query.key;
-  delete activeLicenses[key];
-
-  res.send(`
-    <h2>Key Revoked</h2>
-    <p>${key}</p>
-    <a href="/admin/panel">Back</a>
-  `);
+  res.json({ valid:false, reason:"USED" });
 });
 
 // LOGOUT
@@ -128,30 +109,5 @@ app.get("/admin/logout", (req, res) => {
   res.redirect("/admin");
 });
 
-// VERIFY FOR JAVA
-app.post("/license/verify", (req, res) => {
-  const { key, device } = req.body;
-
-  if (!generatedKeys.includes(key)) {
-    return res.json({ valid: false, reason: "KEY_NOT_FOUND" });
-  }
-
-  if (!activeLicenses[key]) {
-    activeLicenses[key] = device;
-    return res.json({ valid: true, bound: true });
-  }
-
-  if (activeLicenses[key] === device) {
-    return res.json({ valid: true, bound: false });
-  }
-
-  return res.json({
-    valid: false,
-    reason: "KEY_ALREADY_USED_ON_ANOTHER_DEVICE"
-  });
-});
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("RÆON server running");
-});
+app.listen(PORT, () => console.log("RÆON running"));
